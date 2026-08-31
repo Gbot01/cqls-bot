@@ -114,7 +114,7 @@ client.on("messageCreate", async (message) => {
         }
     }
 
-    // Commande ladder (trié du plus grand au plus petit)
+    // Commande ladder (même format qu’avant, mais trié par points décroissants)
     if (message.content === "!ladder") {
         const saison = loadSaison();
         if (Object.keys(saison).length === 0) {
@@ -122,16 +122,14 @@ client.on("messageCreate", async (message) => {
         }
 
         const classement = Object.entries(saison)
-            .sort((a, b) => b[1] - a[1]);
+            .sort((a, b) => b[1] - a[1]); // tri du plus grand au plus petit
 
-        let ladder = "🏆 **TOP Ladder de la saison**\n\n";
+        let ladder = "🏆 **Ladder de la saison**\n\n";
 
-        let position = 1;
         for (const [id, points] of classement) {
             const user = await client.users.fetch(id).catch(() => null);
             const name = user ? user.username : `ID ${id}`;
-            ladder += `**${position}. ${name}** → ${points} points\n`;
-            position++;
+            ladder += `**${name}** → ${points} points\n`;
         }
 
         return message.reply(ladder);
