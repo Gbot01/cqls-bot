@@ -143,13 +143,11 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (reaction.emoji.name !== "👍") return;
 
     // ------------------------------
-    // ANTI DOUBLE VALIDATION FIABLE
+    // ANTI DOUBLE VALIDATION
     // ------------------------------
 
     const validated = loadValidated();
-    if (validated.includes(message.id)) {
-        return;
-    }
+    if (validated.includes(message.id)) return;
 
     // ------------------------------
     // ANTI DOUBLE SCREEN
@@ -158,9 +156,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
     const screenURL = message.attachments.first().url;
     const screens = loadScreens();
 
-    if (screens.includes(screenURL)) {
-        return;
-    }
+    if (screens.includes(screenURL)) return;
 
     // ------------------------------
     // COMPTER LES ALLIÉS
