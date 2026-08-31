@@ -174,17 +174,20 @@ client.on("messageReactionAdd", async (reaction, user) => {
     // ------------------------------
 
     const pointsParPing = calculPoints(salon, nbAllies);
-    const total = pointsParPing * nbAllies;
 
     // ------------------------------
-    // AJOUT DANS SAISON.JSON
+    // AJOUT DES POINTS AUX JOUEURS PINGÉS
     // ------------------------------
 
     const saison = loadSaison();
-    const auteur = message.author.id;
+    const matches = [...message.content.matchAll(regex)];
 
-    if (!saison[auteur]) saison[auteur] = 0;
-    saison[auteur] += total;
+    for (const match of matches) {
+        const allyId = match[1];
+
+        if (!saison[allyId]) saison[allyId] = 0;
+        saison[allyId] += pointsParPing;
+    }
 
     saveSaison(saison);
 
