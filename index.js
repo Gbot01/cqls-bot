@@ -97,12 +97,20 @@ function calculPoints(salon, mentionsCount) {
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
 
-    // ✔️ Détection automatique de screen → annonce uniquement
+    // Détection automatique de screen uniquement dans les salons VSX
     if (message.attachments.size > 0) {
-        await message.reply("📌 Screen détecté. Vote : 👍 = valider / 👎 = refuser (staff uniquement).");
+        const salon = message.channel.name.toLowerCase();
+
+        if (
+            salon.startsWith("attaques") ||
+            salon.startsWith("defenses") ||
+            salon.startsWith("tempo")
+        ) {
+            await message.reply("📌 Screen détecté. Vote : 👍 = valider / 👎 = refuser (staff uniquement).");
+        }
     }
 
-    // ✔️ Commande ladder
+    // Commande ladder
     if (message.content === "!ladder") {
         const saison = loadSaison();
         if (Object.keys(saison).length === 0) {
@@ -119,7 +127,7 @@ client.on("messageCreate", async (message) => {
         return message.reply(ladder);
     }
 
-    // ✔️ Commande newsaison x (reset)
+    // Commande newsaison x (reset)
     if (message.content.startsWith("!newsaison")) {
         const saison = {};
         saveSaison(saison);
