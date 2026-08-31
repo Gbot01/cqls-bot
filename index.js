@@ -159,10 +159,12 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (screens.includes(screenURL)) return;
 
     // ------------------------------
-    // COMPTER LES ALLIÉS (dans le message ORIGINAL)
+    // LIRE UNIQUEMENT LE MESSAGE ORIGINAL
     // ------------------------------
 
     const originalContent = message.cleanContent;
+
+    // Ignorer les messages système
     if (!originalContent || originalContent.trim().length === 0) return;
 
     const regex = /<@!?(\d+)>/g;
@@ -175,7 +177,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
     const pointsParPing = calculPoints(salon, nbAllies);
 
     // ------------------------------
-    // AJOUT DES POINTS AUX JOUEURS PINGÉS (VERSION STABLE)
+    // AJOUT DES POINTS AUX JOUEURS PINGÉS
     // ------------------------------
 
     const saison = loadSaison();
