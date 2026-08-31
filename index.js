@@ -74,7 +74,7 @@ function calculPoints(salon, mentionsCount) {
         return tempo["30+"] * mentionsCount;
     }
 
-    const type = salon.includes("attaques") ? "attaque" : "defense";
+    const type = salon.includes("attaque") ? "attaque" : "defense";
 
     const match = salon.match(/vs(\d+)/);
     if (!match) return 0;
@@ -102,9 +102,13 @@ client.on("messageCreate", async (message) => {
         const salon = message.channel.name.toLowerCase();
 
         if (
-            salon.startsWith("attaques") ||
-            salon.startsWith("defenses") ||
-            salon.startsWith("tempo")
+            salon.includes("attaque") ||
+            salon.includes("attaques") ||
+            salon.includes("defense") ||
+            salon.includes("défense") ||
+            salon.includes("defenses") ||
+            salon.includes("défenses") ||
+            salon.includes("tempo")
         ) {
             await message.reply("📌 Screen détecté. Vote : 👍 = valider / 👎 = refuser (staff uniquement).");
         }
@@ -136,8 +140,10 @@ client.on("messageCreate", async (message) => {
 });
 
 // ----------------------
-// VALIDATION 👍
+// ANTI‑DOUBLE‑VALIDATION 👍
 // ----------------------
+const validatedMessages = new Set();
+
 client.on("messageReactionAdd", async (reaction, user) => {
     if (reaction.emoji.name !== "👍") return;
 
@@ -145,6 +151,10 @@ client.on("messageReactionAdd", async (reaction, user) => {
     const originalContent = originalMessage.content;
 
     if (!originalContent || originalContent.trim().length === 0) return;
+
+    // Empêche double comptage
+    if (validatedMessages.has(originalMessage.id)) return;
+    validatedMessages.add(originalMessage.id);
 
     const regex = /<@!?(\d+)>/g;
     const matches = [...originalContent.matchAll(regex)];
