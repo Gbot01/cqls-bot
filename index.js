@@ -45,7 +45,7 @@ const tempo = {
 };
 
 // ----------------------
-// FONCTIONS SAISON
+// SAISON
 // ----------------------
 function loadSaison() {
     try {
@@ -60,7 +60,7 @@ function saveSaison(data) {
 }
 
 // ----------------------
-// CALCUL DES POINTS
+// CALCUL POINTS (VERSION VSX)
 // ----------------------
 function calculPoints(salon, mentionsCount) {
     salon = salon.toLowerCase();
@@ -77,16 +77,19 @@ function calculPoints(salon, mentionsCount) {
     // ATTAQUES / DÉFENSES
     const type = salon.includes("attaques") ? "attaque" : "defense";
 
-    const match = salon.match(/(\d+)v(\d+)/);
+    // Récupère le nombre d'ennemis depuis "vsX"
+    const match = salon.match(/vs(\d+)/);
     if (!match) return 0;
 
-    const allies = parseInt(match[1]); 
-    const ennemis = parseInt(match[2]); 
+    const ennemis = parseInt(match[1]); // ex : vs5 → 5
+    const allies = mentionsCount;       // nombre de pings = alliés
+
+    if (allies > 5) return 0; // sécurité
 
     if (type === "attaque") {
-        return attaque[allies][ennemis] * mentionsCount;
+        return attaque[allies][ennemis];
     } else {
-        return defense[allies][ennemis] * mentionsCount;
+        return defense[allies][ennemis];
     }
 }
 
@@ -96,16 +99,13 @@ function calculPoints(salon, mentionsCount) {
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
 
-    // ----- LADDER -----
     if (message.content === "!ladder") {
         const saison = loadSaison();
-
         if (Object.keys(saison).length === 0) {
             return message.reply("📉 Aucun point pour le moment.");
         }
 
         let ladder = "🏆 **Ladder de la saison**\n\n";
-
         for (const id in saison) {
             const user = await client.users.fetch(id).catch(() => null);
             const name = user ? user.username : `ID ${id}`;
@@ -115,7 +115,6 @@ client.on("messageCreate", async (message) => {
         return message.reply(ladder);
     }
 
-    // ----- RESET LADDER -----
     if (message.content === "!resetladder") {
         const saison = loadSaison();
         for (const id in saison) {
@@ -127,7 +126,7 @@ client.on("messageCreate", async (message) => {
 });
 
 // ----------------------
-// POINTS SUR VALIDATION 👍
+// VALIDATION 👍
 // ----------------------
 client.on("messageReactionAdd", async (reaction, user) => {
     if (reaction.emoji.name !== "👍") return;
