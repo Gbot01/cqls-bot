@@ -74,17 +74,15 @@ function calculPoints(salon, mentionsCount) {
         return tempo["30+"] * mentionsCount;
     }
 
-    // ATTAQUES / DÉFENSES
     const type = salon.includes("attaques") ? "attaque" : "defense";
 
-    // Récupère le nombre d'ennemis depuis "vsX"
     const match = salon.match(/vs(\d+)/);
     if (!match) return 0;
 
-    const ennemis = parseInt(match[1]); // ex : vs5 → 5
-    const allies = mentionsCount;       // nombre de pings = alliés
+    const ennemis = parseInt(match[1]);
+    const allies = mentionsCount;
 
-    if (allies > 5) return 0; // sécurité
+    if (allies > 5) return 0;
 
     if (type === "attaque") {
         return attaque[allies][ennemis];
@@ -115,13 +113,11 @@ client.on("messageCreate", async (message) => {
         return message.reply(ladder);
     }
 
-    if (message.content === "!resetladder") {
-        const saison = loadSaison();
-        for (const id in saison) {
-            saison[id] = 0;
-        }
+    // ✔️ TA commande !newsaison x (RESET + nouvelle saison)
+    if (message.content.startsWith("!newsaison")) {
+        const saison = {};
         saveSaison(saison);
-        return message.reply("🔄 Le ladder a été réinitialisé !");
+        return message.reply("🌟 Nouvelle saison lancée ! Le ladder a été remis à zéro.");
     }
 });
 
@@ -132,8 +128,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (reaction.emoji.name !== "👍") return;
 
     const originalMessage = reaction.message;
-
-    // IMPORTANT : lire le vrai contenu
     const originalContent = originalMessage.content;
 
     if (!originalContent || originalContent.trim().length === 0) return;
