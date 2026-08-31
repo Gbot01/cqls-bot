@@ -132,7 +132,9 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (reaction.emoji.name !== "👍") return;
 
     const originalMessage = reaction.message;
-    const originalContent = originalMessage.cleanContent;
+
+    // IMPORTANT : lire le vrai contenu
+    const originalContent = originalMessage.content;
 
     if (!originalContent || originalContent.trim().length === 0) return;
 
