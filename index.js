@@ -114,18 +114,24 @@ client.on("messageCreate", async (message) => {
         }
     }
 
-    // Commande ladder
+    // Commande ladder (trié du plus grand au plus petit)
     if (message.content === "!ladder") {
         const saison = loadSaison();
         if (Object.keys(saison).length === 0) {
             return message.reply("📉 Aucun point pour le moment.");
         }
 
-        let ladder = "🏆 **Ladder de la saison**\n\n";
-        for (const id in saison) {
+        const classement = Object.entries(saison)
+            .sort((a, b) => b[1] - a[1]);
+
+        let ladder = "🏆 **TOP Ladder de la saison**\n\n";
+
+        let position = 1;
+        for (const [id, points] of classement) {
             const user = await client.users.fetch(id).catch(() => null);
             const name = user ? user.username : `ID ${id}`;
-            ladder += `**${name}** → ${saison[id]} points\n`;
+            ladder += `**${position}. ${name}** → ${points} points\n`;
+            position++;
         }
 
         return message.reply(ladder);
@@ -152,7 +158,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
     if (!originalContent || originalContent.trim().length === 0) return;
 
-    // Empêche double comptage
+    // Empêche double comptage même si quelqu’un retire/remet 👍
     if (validatedMessages.has(originalMessage.id)) return;
     validatedMessages.add(originalMessage.id);
 
