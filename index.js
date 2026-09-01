@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, Partials } = require("discord.js");
 const axios = require("axios");
 
 // =========================
-//      CLIENT DISCORD
+// CONFIG DISCORD
 // =========================
 const client = new Client({
     intents: [
@@ -15,7 +15,7 @@ const client = new Client({
 });
 
 // =========================
-//      BARÈMES ATTAQUES
+// BARÈMES ATTAQUE / DÉFENSE / TEMPO
 // =========================
 const attaque = {
     1: { 5: 1750, 4: 1000, 3: 400, 2: 150, 1: 115, 0: 50 },
@@ -25,9 +25,6 @@ const attaque = {
     5: { 5: 750, 4: 500, 3: 200, 2: 100, 1: 75, 0: 50 }
 };
 
-// =========================
-//      BARÈMES DÉFENSES
-// =========================
 const defense = {
     1: { 5: 2200, 4: 750, 3: 400, 2: 150, 1: 65, 0: 0 },
     2: { 5: 1900, 4: 650, 3: 350, 2: 125, 1: 55, 0: 0 },
@@ -36,9 +33,6 @@ const defense = {
     5: { 5: 1000, 4: 350, 3: 200, 2: 50, 1: 25, 0: 0 }
 };
 
-// =========================
-//      BARÈMES TEMPO
-// =========================
 const tempo = {
     "5-10": 50,
     "10-20": 100,
@@ -48,7 +42,7 @@ const tempo = {
 };
 
 // =========================
-//      CONFIG GITHUB
+// CONFIG GITHUB
 // =========================
 const owner = "Gbot01";
 const repo = "cqls-bot";
@@ -56,7 +50,7 @@ const filePath = "saison.json";
 const token = process.env.GITHUB_TOKEN;
 
 // =========================
-//      LECTURE SAISON.JSON
+// LECTURE SAISON.JSON
 // =========================
 async function readSaison() {
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
@@ -73,15 +67,14 @@ async function readSaison() {
         return JSON.parse(content);
 
     } catch (err) {
-        console.log("❌ ERREUR GITHUB LORS DE LA LECTURE SAISON.JSON");
+        console.log("❌ Impossible de lire saison.json sur GitHub");
         console.log(err.response?.status, err.response?.statusText);
-        console.log(err.response?.data);
         return {};
     }
 }
 
 // =========================
-//      ÉCRITURE SAISON.JSON
+// ÉCRITURE SAISON.JSON
 // =========================
 async function writeSaison(newData) {
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
@@ -97,51 +90,47 @@ async function writeSaison(newData) {
         });
 
         sha = current.data.sha;
-
-    } catch (err) {
-        console.log("⚠️ saison.json n'existe pas encore → création");
+    } catch {
+        console.log("⚠️ Création du fichier saison.json");
     }
 
     const updatedContent = Buffer.from(JSON.stringify(newData, null, 2)).toString("base64");
 
-    try {
-        await axios.put(url, {
-            message: "Update saison.json",
-            content: updatedContent,
-            sha: sha
-        }, {
-            headers: {
-                Authorization: `Bearer ${token}`,
-                Accept: "application/vnd.github.v3+json"
-            }
-        });
-    } catch (err) {
-        console.log("❌ ERREUR GITHUB LORS DE L'ÉCRITURE SAISON.JSON");
-        console.log(err.response?.status, err.response?.statusText);
-        console.log(err.response?.data);
-    }
+    await axios.put(url, {
+        message: "Update saison.json",
+        content: updatedContent,
+        sha: sha
+    }, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github.v3+json"
+        }
+    });
 }
 
 // =========================
-//      VARIABLE SAISON
+// VARIABLE SAISON
 // =========================
 let saison = {};
 
 // =========================
-//      READY
+// CHARGEMENT GITHUB AVANT READY
+// =========================
+(async () => {
+    console.log("⏳ Chargement saison.json depuis GitHub…");
+    saison = await readSaison();
+    console.log("✅ Saison chargée :", saison);
+})();
+
+// =========================
+// READY
 // =========================
 client.on("ready", () => {
-    console.log(`Connecté en tant que ${client.user.tag}`);
-
-    // CHARGEMENT SAISON APRÈS READY (évite crash)
-    setTimeout(async () => {
-        saison = await readSaison();
-        console.log("Saison chargée depuis GitHub !");
-    }, 2000);
+    console.log(`🔥 Bot connecté : ${client.user.tag}`);
 });
 
 // =========================
-//      CALCUL POINTS VSX
+// CALCUL POINTS VSX
 // =========================
 function calculPoints(salon, mentionsCount) {
     salon = salon.toLowerCase();
@@ -155,7 +144,6 @@ function calculPoints(salon, mentionsCount) {
     }
 
     const type = salon.includes("attaque") ? "attaque" : "defense";
-
     const match = salon.match(/vs(\d+)/);
     if (!match) return 0;
 
@@ -164,15 +152,13 @@ function calculPoints(salon, mentionsCount) {
 
     if (allies > 5) return 0;
 
-    if (type === "attaque") {
-        return attaque[allies][ennemis];
-    } else {
-        return defense[allies][ennemis];
-    }
+    return type === "attaque"
+        ? attaque[allies][ennemis]
+        : defense[allies][ennemis];
 }
 
 // =========================
-//      MESSAGECREATE
+// MESSAGECREATE
 // =========================
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
@@ -215,12 +201,12 @@ client.on("messageCreate", async (message) => {
     if (message.content.startsWith("!newsaison")) {
         saison = {};
         await writeSaison(saison);
-        return message.reply("🌟 Nouvelle saison lancée ! Le ladder a été remis à zéro.");
+        return message.reply("🌟 Nouvelle saison lancée !");
     }
 });
 
 // =========================
-//      ANTI DOUBLE VALIDATION
+// ANTI DOUBLE VALIDATION
 // =========================
 const validatedMessages = new Set();
 
@@ -231,13 +217,12 @@ client.on("messageReactionAdd", async (reaction, user) => {
     const originalContent = originalMessage.content;
 
     if (!originalContent || originalContent.trim().length === 0) return;
-
     if (validatedMessages.has(originalMessage.id)) return;
+
     validatedMessages.add(originalMessage.id);
 
     const regex = /<@!?(\d+)>/g;
     const matches = [...originalContent.matchAll(regex)];
-
     if (matches.length === 0) return;
 
     const mentionsCount = matches.length;
@@ -255,6 +240,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
 });
 
 // =========================
-//      LOGIN
+// LOGIN
 // =========================
 client.login(process.env.TOKEN);
