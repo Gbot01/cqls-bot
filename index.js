@@ -1,6 +1,9 @@
 const { Client, GatewayIntentBits, Partials } = require("discord.js");
-const fs = require("fs");
+const axios = require("axios");
 
+// =========================
+//      CLIENT DISCORD
+// =========================
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -11,9 +14,9 @@ const client = new Client({
     partials: [Partials.Message, Partials.Reaction]
 });
 
-// ----------------------
-// BARÈMES ATTAQUES
-// ----------------------
+// =========================
+//      BARÈMES ATTAQUES
+// =========================
 const attaque = {
     1: { 5: 1750, 4: 1000, 3: 400, 2: 150, 1: 115, 0: 50 },
     2: { 5: 1500, 4: 875, 3: 350, 2: 137, 1: 105, 0: 50 },
@@ -22,9 +25,9 @@ const attaque = {
     5: { 5: 750, 4: 500, 3: 200, 2: 100, 1: 75, 0: 50 }
 };
 
-// ----------------------
-// BARÈMES DÉFENSES
-// ----------------------
+// =========================
+//      BARÈMES DÉFENSES
+// =========================
 const defense = {
     1: { 5: 2200, 4: 750, 3: 400, 2: 150, 1: 65, 0: 0 },
     2: { 5: 1900, 4: 650, 3: 350, 2: 125, 1: 55, 0: 0 },
@@ -33,9 +36,9 @@ const defense = {
     5: { 5: 1000, 4: 350, 3: 200, 2: 50, 1: 25, 0: 0 }
 };
 
-// ----------------------
-// BARÈMES TEMPO
-// ----------------------
+// =========================
+//      BARÈMES TEMPO
+// =========================
 const tempo = {
     "5-10": 50,
     "10-20": 100,
@@ -44,24 +47,75 @@ const tempo = {
     "30+": 250
 };
 
-// ----------------------
-// SAISON
-// ----------------------
-function loadSaison() {
-    try {
-        return JSON.parse(fs.readFileSync("saison.json", "utf8"));
-    } catch {
-        return {};
-    }
+// =========================
+//      CONFIG GITHUB
+// =========================
+const owner = "Gbot01";
+const repo = "cqls-bot";
+const filePath = "saison.json";
+const token = process.env.GITHUB_TOKEN;
+
+// =========================
+//      LECTURE SAISON.JSON
+// =========================
+async function readSaison() {
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+
+    const res = await axios.get(url, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github.v3+json"
+        }
+    });
+
+    const content = Buffer.from(res.data.content, "base64").toString("utf8");
+    return JSON.parse(content);
 }
 
-function saveSaison(data) {
-    fs.writeFileSync("saison.json", JSON.stringify(data, null, 2));
+// =========================
+//      ÉCRITURE SAISON.JSON
+// =========================
+async function writeSaison(newData) {
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+
+    const current = await axios.get(url, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github.v3+json"
+        }
+    });
+
+    const sha = current.data.sha;
+    const updatedContent = Buffer.from(JSON.stringify(newData, null, 2)).toString("base64");
+
+    await axios.put(url, {
+        message: "Update saison.json",
+        content: updatedContent,
+        sha: sha
+    }, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github.v3+json"
+        }
+    });
 }
 
-// ----------------------
-// CALCUL POINTS (VERSION VSX)
-// ----------------------
+// =========================
+//      VARIABLE SAISON
+// =========================
+let saison = {};
+
+// =========================
+//      READY
+// =========================
+client.on("ready", async () => {
+    saison = await readSaison();
+    console.log("Saison chargée depuis GitHub !");
+});
+
+// =========================
+//      CALCUL POINTS VSX
+// =========================
 function calculPoints(salon, mentionsCount) {
     salon = salon.toLowerCase();
 
@@ -91,13 +145,13 @@ function calculPoints(salon, mentionsCount) {
     }
 }
 
-// ----------------------
-// MESSAGECREATE
-// ----------------------
+// =========================
+//      MESSAGECREATE
+// =========================
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
 
-    // Détection automatique de screen uniquement dans les salons VSX
+    // Détection screen
     if (message.attachments.size > 0) {
         const salon = message.channel.name.toLowerCase();
 
@@ -114,15 +168,14 @@ client.on("messageCreate", async (message) => {
         }
     }
 
-    // Commande ladder (même format qu’avant, mais trié par points décroissants)
+    // Ladder
     if (message.content === "!ladder") {
-        const saison = loadSaison();
         if (Object.keys(saison).length === 0) {
             return message.reply("📉 Aucun point pour le moment.");
         }
 
         const classement = Object.entries(saison)
-            .sort((a, b) => b[1] - a[1]); // tri du plus grand au plus petit
+            .sort((a, b) => b[1] - a[1]);
 
         let ladder = "🏆 **Ladder de la saison**\n\n";
 
@@ -135,17 +188,17 @@ client.on("messageCreate", async (message) => {
         return message.reply(ladder);
     }
 
-    // Commande newsaison x (reset)
+    // Reset saison
     if (message.content.startsWith("!newsaison")) {
-        const saison = {};
-        saveSaison(saison);
+        saison = {};
+        await writeSaison(saison);
         return message.reply("🌟 Nouvelle saison lancée ! Le ladder a été remis à zéro.");
     }
 });
 
-// ----------------------
-// ANTI‑DOUBLE‑VALIDATION 👍
-// ----------------------
+// =========================
+//      ANTI DOUBLE VALIDATION
+// =========================
 const validatedMessages = new Set();
 
 client.on("messageReactionAdd", async (reaction, user) => {
@@ -156,7 +209,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
     if (!originalContent || originalContent.trim().length === 0) return;
 
-    // Empêche double comptage même si quelqu’un retire/remet 👍
     if (validatedMessages.has(originalMessage.id)) return;
     validatedMessages.add(originalMessage.id);
 
@@ -170,18 +222,16 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
     const points = calculPoints(salonName, mentionsCount);
 
-    const saison = loadSaison();
-
     for (const match of matches) {
         const allyId = match[1];
         if (!saison[allyId]) saison[allyId] = 0;
         saison[allyId] += points;
     }
 
-    saveSaison(saison);
+    await writeSaison(saison);
 });
 
-// ----------------------
-// LOGIN
-// ----------------------
+// =========================
+//      LOGIN
+// =========================
 client.login(process.env.TOKEN);
