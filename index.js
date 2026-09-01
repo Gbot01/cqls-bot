@@ -26,11 +26,11 @@ const attaque = {
 };
 
 const defense = {
-    1: { 5: 2200, 4: 750, 3: 400, 2: 150, 1: 65, 0: 0 },
-    2: { 5: 1900, 4: 650, 3: 350, 2: 125, 1: 55, 0: 0 },
-    3: { 5: 1600, 4: 550, 3: 300, 2: 100, 1: 45, 0: 0 },
-    4: { 5: 1300, 4: 450, 3: 250, 2: 75, 1: 35, 0: 0 },
-    5: { 5: 1000, 4: 350, 3: 200, 2: 50, 1: 25, 0: 0 }
+    1: { 5: 2200, 4: 750, 3: 400, 2: 150, 1: 65 },
+    2: { 5: 1900, 4: 650, 3: 350, 2: 125, 1: 55 },
+    3: { 5: 1600, 4: 550, 3: 300, 2: 100, 1: 45 },
+    4: { 5: 1300, 4: 450, 3: 250, 2: 75, 1: 35 },
+    5: { 5: 1000, 4: 350, 3: 200, 2: 50, 1: 25 }
 };
 
 const tempo = {
@@ -130,11 +130,12 @@ client.on("ready", () => {
 });
 
 // =========================
-// CALCUL POINTS VSX
+// CALCUL POINTS VSX (CORRIGÉ)
 // =========================
 function calculPoints(salon, mentionsCount) {
     salon = salon.toLowerCase();
 
+    // TEMPO
     if (salon.includes("tempo")) {
         if (salon.includes("5-10")) return tempo["5-10"] * mentionsCount;
         if (salon.includes("10-20")) return tempo["10-20"] * mentionsCount;
@@ -143,6 +144,12 @@ function calculPoints(salon, mentionsCount) {
         return tempo["30+"] * mentionsCount;
     }
 
+    // 🔥 ATTAQUE NO-DEF : 50 points par ping
+    if (salon.includes("attaques-no-def") || salon.includes("attaque-no-def")) {
+        return 50 * mentionsCount;
+    }
+
+    // ATTAQUE / DÉFENSE CLASSIQUE
     const type = salon.includes("attaque") ? "attaque" : "defense";
     const match = salon.match(/vs(\d+)/);
     if (!match) return 0;
