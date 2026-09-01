@@ -130,7 +130,7 @@ client.on("ready", () => {
 });
 
 // =========================
-// CALCUL POINTS VSX (CORRIGÉ)
+// CALCUL POINTS VSX
 // =========================
 function calculPoints(salon, mentionsCount) {
     salon = salon.toLowerCase();
@@ -144,7 +144,7 @@ function calculPoints(salon, mentionsCount) {
         return tempo["30+"] * mentionsCount;
     }
 
-    // 🔥 ATTAQUE NO-DEF : 50 points par ping
+    // ATTAQUE NO-DEF
     if (salon.includes("attaques-no-def") || salon.includes("attaque-no-def")) {
         return 50 * mentionsCount;
     }
