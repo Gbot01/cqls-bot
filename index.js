@@ -61,15 +61,23 @@ const token = process.env.GITHUB_TOKEN;
 async function readSaison() {
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
 
-    const res = await axios.get(url, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github.v3+json"
-        }
-    });
+    try {
+        const res = await axios.get(url, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github.v3+json"
+            }
+        });
 
-    const content = Buffer.from(res.data.content, "base64").toString("utf8");
-    return JSON.parse(content);
+        const content = Buffer.from(res.data.content, "base64").toString("utf8");
+        return JSON.parse(content);
+
+    } catch (err) {
+        console.log("❌ ERREUR GITHUB LORS DE LA LECTURE SAISON.JSON");
+        console.log(err.response?.status, err.response?.statusText);
+        console.log(err.response?.data);
+        return {};
+    }
 }
 
 // =========================
@@ -78,26 +86,40 @@ async function readSaison() {
 async function writeSaison(newData) {
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
 
-    const current = await axios.get(url, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github.v3+json"
-        }
-    });
+    let sha = null;
 
-    const sha = current.data.sha;
+    try {
+        const current = await axios.get(url, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github.v3+json"
+            }
+        });
+
+        sha = current.data.sha;
+
+    } catch (err) {
+        console.log("⚠️ saison.json n'existe pas encore → création");
+    }
+
     const updatedContent = Buffer.from(JSON.stringify(newData, null, 2)).toString("base64");
 
-    await axios.put(url, {
-        message: "Update saison.json",
-        content: updatedContent,
-        sha: sha
-    }, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github.v3+json"
-        }
-    });
+    try {
+        await axios.put(url, {
+            message: "Update saison.json",
+            content: updatedContent,
+            sha: sha
+        }, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github.v3+json"
+            }
+        });
+    } catch (err) {
+        console.log("❌ ERREUR GITHUB LORS DE L'ÉCRITURE SAISON.JSON");
+        console.log(err.response?.status, err.response?.statusText);
+        console.log(err.response?.data);
+    }
 }
 
 // =========================
@@ -108,9 +130,14 @@ let saison = {};
 // =========================
 //      READY
 // =========================
-client.on("ready", async () => {
-    saison = await readSaison();
-    console.log("Saison chargée depuis GitHub !");
+client.on("ready", () => {
+    console.log(`Connecté en tant que ${client.user.tag}`);
+
+    // CHARGEMENT SAISON APRÈS READY (évite crash)
+    setTimeout(async () => {
+        saison = await readSaison();
+        console.log("Saison chargée depuis GitHub !");
+    }, 2000);
 });
 
 // =========================
@@ -119,7 +146,6 @@ client.on("ready", async () => {
 function calculPoints(salon, mentionsCount) {
     salon = salon.toLowerCase();
 
-    // TEMPO
     if (salon.includes("tempo")) {
         if (salon.includes("5-10")) return tempo["5-10"] * mentionsCount;
         if (salon.includes("10-20")) return tempo["10-20"] * mentionsCount;
@@ -151,7 +177,6 @@ function calculPoints(salon, mentionsCount) {
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
 
-    // Détection screen
     if (message.attachments.size > 0) {
         const salon = message.channel.name.toLowerCase();
 
@@ -168,7 +193,6 @@ client.on("messageCreate", async (message) => {
         }
     }
 
-    // Ladder
     if (message.content === "!ladder") {
         if (Object.keys(saison).length === 0) {
             return message.reply("📉 Aucun point pour le moment.");
@@ -188,7 +212,6 @@ client.on("messageCreate", async (message) => {
         return message.reply(ladder);
     }
 
-    // Reset saison
     if (message.content.startsWith("!newsaison")) {
         saison = {};
         await writeSaison(saison);
