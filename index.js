@@ -10,7 +10,7 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.GuildMembers   // ← AJOUTÉ POUR LES PSEUDOS SERVEUR
+        GatewayIntentBits.GuildMembers   // ← Obligatoire pour récupérer les pseudos serveur
     ],
     partials: [Partials.Message, Partials.Reaction]
 });
@@ -128,6 +128,9 @@ let saison = {};
 // =========================
 client.on("ready", () => {
     console.log(`🔥 Bot connecté : ${client.user.tag}`);
+
+    // 🔥 Charge tous les membres du serveur pour récupérer les pseudos serveur
+    client.guilds.cache.forEach(g => g.members.fetch());
 });
 
 // =========================
