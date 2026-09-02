@@ -10,7 +10,7 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.GuildMembers   // ← Obligatoire pour récupérer les pseudos serveur
+        GatewayIntentBits.GuildMembers
     ],
     partials: [Partials.Message, Partials.Reaction]
 });
@@ -129,7 +129,7 @@ let saison = {};
 client.on("ready", () => {
     console.log(`🔥 Bot connecté : ${client.user.tag}`);
 
-    // 🔥 Charge tous les membres du serveur pour récupérer les pseudos serveur
+    // Charge tous les membres du serveur pour récupérer les pseudos serveur
     client.guilds.cache.forEach(g => g.members.fetch());
 });
 
@@ -200,16 +200,24 @@ client.on("messageCreate", async (message) => {
 
         let ladder = "🏆 **Ladder de la saison**\n\n";
 
+        const podium = ["🥇 1er", "🥈 2e", "🥉 3e"];
+        let index = 0;
+
         for (const [id, points] of classement) {
 
-            // 🔥 Récupération du pseudo serveur (nickname)
             const member = await message.guild.members.fetch(id).catch(() => null);
 
             const name = member
                 ? (member.nickname || member.user.username)
                 : `ID ${id}`;
 
-            ladder += `**${name}** → ${points} points\n`;
+            if (index < 3) {
+                ladder += `**${podium[index]} — ${name}** → ${points} points\n`;
+            } else {
+                ladder += `**${index + 1}e — ${name}** → ${points} points\n`;
+            }
+
+            index++;
         }
 
         return message.reply(ladder);
