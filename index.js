@@ -197,8 +197,14 @@ client.on("messageCreate", async (message) => {
         let ladder = "🏆 **Ladder de la saison**\n\n";
 
         for (const [id, points] of classement) {
-            const user = await client.users.fetch(id).catch(() => null);
-            const name = user ? user.username : `ID ${id}`;
+
+            // 🔥 Récupération du pseudo serveur (nickname)
+            const member = await message.guild.members.fetch(id).catch(() => null);
+
+            const name = member
+                ? (member.nickname || member.user.username)
+                : `ID ${id}`;
+
             ladder += `**${name}** → ${points} points\n`;
         }
 
