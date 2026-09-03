@@ -226,7 +226,7 @@ client.on("messageCreate", async (message) => {
 });
 
 // =========================
-// ANTI DOUBLE VALIDATION + ANTI-SPAM LÉGER
+// ANTI DOUBLE VALIDATION + ANTI-SPAM LÉGER + DM
 // =========================
 const validatedMessages = new Set();
 let lastValidationTime = 0;
@@ -235,7 +235,13 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (reaction.emoji.name !== "👍") return;
 
     const now = Date.now();
-    if (now - lastValidationTime < 500) return; // Anti-spam léger
+
+    // ANTI-SPAM LÉGER + DM
+    if (now - lastValidationTime < 500) {
+        user.send("⚠️ Tu valides trop vite, patiente une seconde.").catch(() => {});
+        return;
+    }
+
     lastValidationTime = now;
 
     const originalMessage = reaction.message;
