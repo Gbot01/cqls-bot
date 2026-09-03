@@ -8,7 +8,6 @@ const {
     Events 
 } = require("discord.js");
 const axios = require("axios");
-const fs = require("fs");
 
 // =========================
 // CONFIG DISCORD
@@ -24,7 +23,7 @@ const client = new Client({
 });
 
 // =========================
-// BARÈMES ATTAQUE / DÉFENSE / TEMPO (TES VALEURS EXACTES)
+// BARÈMES ATTAQUE / DÉFENSE / TEMPO
 // =========================
 const attaque = {
     1: { 5: 1750, 4: 1000, 3: 400, 2: 150, 1: 115, 0: 50 },
@@ -51,31 +50,40 @@ const tempo = {
 };
 
 // =========================
-// SAISON.JSON LOCAL
-// =========================
-function readLocalSaison() {
-    try {
-        return JSON.parse(fs.readFileSync("./saison.json", "utf8"));
-    } catch {
-        return {};
-    }
-}
-
-function writeLocalSaison(data) {
-    fs.writeFileSync("./saison.json", JSON.stringify(data, null, 2));
-}
-
-let saison = readLocalSaison();
-
-// =========================
-// BACKUP GITHUB (MANUEL)
+// CONFIG GITHUB
 // =========================
 const owner = "Gbot01";
 const repo = "cqls-bot";
 const filePath = "saison.json";
 const token = process.env.GITHUB_TOKEN;
 
-async function backupToGitHub() {
+// =========================
+// LECTURE SAISON.JSON
+// =========================
+async function readSaison() {
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+
+    try {
+        const res = await axios.get(url, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github.v3+json"
+            }
+        });
+
+        const content = Buffer.from(res.data.content, "base64").toString("utf8");
+        return JSON.parse(content);
+
+    } catch (err) {
+        console.log("❌ Impossible de lire saison.json sur GitHub");
+        return {};
+    }
+}
+
+// =========================
+// ÉCRITURE SAISON.JSON
+// =========================
+async function writeSaison(newData) {
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
 
     let sha = null;
@@ -87,13 +95,14 @@ async function backupToGitHub() {
                 Accept: "application/vnd.github.v3+json"
             }
         });
+
         sha = current.data.sha;
     } catch {}
 
-    const updatedContent = Buffer.from(JSON.stringify(saison, null, 2)).toString("base64");
+    const updatedContent = Buffer.from(JSON.stringify(newData, null, 2)).toString("base64");
 
     await axios.put(url, {
-        message: "Backup saison.json",
+        message: "Update saison.json",
         content: updatedContent,
         sha: sha
     }, {
@@ -105,28 +114,41 @@ async function backupToGitHub() {
 }
 
 // =========================
+// VARIABLE SAISON
+// =========================
+let saison = {};
+
+// =========================
+// CHARGEMENT GITHUB
+// =========================
+(async () => {
+    saison = await readSaison();
+})();
+
+// =========================
 // READY
 // =========================
 client.on("ready", () => {
     console.log(`🔥 Bot connecté : ${client.user.tag}`);
+    client.guilds.cache.forEach(g => g.members.fetch());
 });
 
 // =========================
 // CALCUL POINTS VSX
 // =========================
-function calculPoints(salon, alliesCount) {
+function calculPoints(salon, mentionsCount) {
     salon = salon.toLowerCase();
 
     if (salon.includes("tempo")) {
-        if (salon.includes("5-10")) return tempo["5-10"];
-        if (salon.includes("10-20")) return tempo["10-20"];
-        if (salon.includes("20-25")) return tempo["20-25"];
-        if (salon.includes("25-30")) return tempo["25-30"];
-        return tempo["30+"];
+        if (salon.includes("5-10")) return tempo["5-10"] * mentionsCount;
+        if (salon.includes("10-20")) return tempo["10-20"] * mentionsCount;
+        if (salon.includes("20-25")) return tempo["20-25"] * mentionsCount;
+        if (salon.includes("25-30")) return tempo["25-30"] * mentionsCount;
+        return tempo["30+"] * mentionsCount;
     }
 
     if (salon.includes("attaques-no-def") || salon.includes("attaque-no-def")) {
-        return 50;
+        return 50 * mentionsCount;
     }
 
     const type = salon.includes("attaque") ? "attaque" : "defense";
@@ -134,7 +156,7 @@ function calculPoints(salon, alliesCount) {
     if (!match) return 0;
 
     const ennemis = parseInt(match[1]);
-    const allies = alliesCount;
+    const allies = mentionsCount;
 
     if (allies > 5) return 0;
 
@@ -150,7 +172,7 @@ const lastScreenTime = new Map();
 const SCREEN_COOLDOWN = 1000;
 
 // =========================
-// MESSAGE CREATE
+// MESSAGE CREATE (screens + commandes)
 // =========================
 client.on(Events.MessageCreate, async (message) => {
 
@@ -232,14 +254,8 @@ client.on(Events.MessageCreate, async (message) => {
     // NEWSAISON
     if (message.content.startsWith("!newsaison")) {
         saison = {};
-        writeLocalSaison(saison);
+        await writeSaison(saison);
         return message.reply("🌟 Nouvelle saison lancée !");
-    }
-
-    // BACKUP MANUEL
-    if (message.content === "!backup") {
-        await backupToGitHub();
-        return message.reply("💾 Backup effectué sur GitHub !");
     }
 });
 
@@ -253,9 +269,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (!interaction.isButton()) return;
 
+    // 🔥 Vérification du rôle Chef par NOM
+    if (!interaction.member.roles.cache.some(r => r.name.toLowerCase() === "chef")) {
+        return interaction.reply({
+            content: "⛔ Tu n’as pas la permission de valider ce screen.",
+            ephemeral: true
+        });
+    }
+
     const chefId = interaction.user.id;
     const [action, messageId] = interaction.customId.split("_");
 
+    // Anti-spam chef
     const last = lastChefValidation.get(chefId);
     const now = Date.now();
 
@@ -268,6 +293,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     lastChefValidation.set(chefId, now);
 
+    // Récupération du screen
     const channel = interaction.channel;
     const screenMessage = await channel.messages.fetch(messageId).catch(() => null);
 
@@ -306,10 +332,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         validationQueue.add(messageId);
 
+        let points = 0;
+
         try {
             const regex = /<@!?(\d+)>/g;
             const matches = [...screenMessage.content.matchAll(regex)];
-
             if (matches.length === 0) {
                 validationQueue.delete(messageId);
                 return interaction.reply({
@@ -321,9 +348,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const mentionsCount = matches.length;
             const salonName = screenMessage.channel.name;
 
-            const pointsParPing = calculPoints(salonName, mentionsCount);
-
-            if (!pointsParPing || pointsParPing === 0) {
+            points = calculPoints(salonName, mentionsCount);
+            if (!points || points === 0) {
                 validationQueue.delete(messageId);
                 return interaction.reply({
                     content: "⚠️ Aucun point attribué.",
@@ -334,26 +360,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
             for (const match of matches) {
                 const allyId = match[1];
                 if (!saison[allyId]) saison[allyId] = 0;
-                saison[allyId] += pointsParPing;
+                saison[allyId] += points;
             }
 
-            writeLocalSaison(saison);
-
-            const totalPoints = pointsParPing * mentionsCount;
-
-            validationQueue.delete(messageId);
-
-            await screenMessage.react("👍").catch(() => {});
-
-            await interaction.message.edit({
-                content: `🟩 Screen validé par <@${interaction.user.id}> — +${totalPoints} points`,
-                components: []
-            });
-
-            return interaction.reply({
-                content: "✔ Validation prise en compte",
-                ephemeral: true
-            });
+            await writeSaison(saison);
 
         } catch (err) {
             console.error(err);
@@ -363,6 +373,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 ephemeral: true
             });
         }
+
+        validationQueue.delete(messageId);
+
+        await screenMessage.react("👍").catch(() => {});
+
+        await interaction.message.edit({
+            content: `🟩 Screen validé par <@${interaction.user.id}> — +${points} points`,
+            components: []
+        });
+
+        return interaction.reply({
+            content: "✔ Validation prise en compte",
+            ephemeral: true
+        });
     }
 });
 
