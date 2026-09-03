@@ -128,8 +128,6 @@ let saison = {};
 // =========================
 client.on("ready", () => {
     console.log(`🔥 Bot connecté : ${client.user.tag}`);
-
-    // Charge tous les membres du serveur pour récupérer les pseudos serveur
     client.guilds.cache.forEach(g => g.members.fetch());
 });
 
@@ -139,7 +137,6 @@ client.on("ready", () => {
 function calculPoints(salon, mentionsCount) {
     salon = salon.toLowerCase();
 
-    // TEMPO
     if (salon.includes("tempo")) {
         if (salon.includes("5-10")) return tempo["5-10"] * mentionsCount;
         if (salon.includes("10-20")) return tempo["10-20"] * mentionsCount;
@@ -148,12 +145,10 @@ function calculPoints(salon, mentionsCount) {
         return tempo["30+"] * mentionsCount;
     }
 
-    // ATTAQUE NO-DEF
     if (salon.includes("attaques-no-def") || salon.includes("attaque-no-def")) {
         return 50 * mentionsCount;
     }
 
-    // ATTAQUE / DÉFENSE CLASSIQUE
     const type = salon.includes("attaque") ? "attaque" : "defense";
     const match = salon.match(/vs(\d+)/);
     if (!match) return 0;
@@ -231,12 +226,17 @@ client.on("messageCreate", async (message) => {
 });
 
 // =========================
-// ANTI DOUBLE VALIDATION
+// ANTI DOUBLE VALIDATION + ANTI-SPAM LÉGER
 // =========================
 const validatedMessages = new Set();
+let lastValidationTime = 0;
 
 client.on("messageReactionAdd", async (reaction, user) => {
     if (reaction.emoji.name !== "👍") return;
+
+    const now = Date.now();
+    if (now - lastValidationTime < 500) return; // Anti-spam léger
+    lastValidationTime = now;
 
     const originalMessage = reaction.message;
     const originalContent = originalMessage.content;
