@@ -23,7 +23,7 @@ const client = new Client({
 });
 
 // =========================
-// BARÈMES ATTAQUE / DÉFENSE / TEMPO
+// BARÈMES ATTAQUE / DÉFENSE / TEMPO (TES VALEURS EXACTES)
 // =========================
 const attaque = {
     1: { 5: 1750, 4: 1000, 3: 400, 2: 150, 1: 115, 0: 50 },
@@ -134,21 +134,23 @@ client.on("ready", () => {
 });
 
 // =========================
-// CALCUL POINTS VSX
+// CALCUL POINTS VSX (POINTS PAR PING, PAS MULTIPLIÉ)
 // =========================
-function calculPoints(salon, mentionsCount) {
+function calculPoints(salon, alliesCount) {
     salon = salon.toLowerCase();
 
+    // TEMPO → barème déjà par ping
     if (salon.includes("tempo")) {
-        if (salon.includes("5-10")) return tempo["5-10"] * mentionsCount;
-        if (salon.includes("10-20")) return tempo["10-20"] * mentionsCount;
-        if (salon.includes("20-25")) return tempo["20-25"] * mentionsCount;
-        if (salon.includes("25-30")) return tempo["25-30"] * mentionsCount;
-        return tempo["30+"] * mentionsCount;
+        if (salon.includes("5-10")) return tempo["5-10"];
+        if (salon.includes("10-20")) return tempo["10-20"];
+        if (salon.includes("20-25")) return tempo["20-25"];
+        if (salon.includes("25-30")) return tempo["25-30"];
+        return tempo["30+"];
     }
 
+    // ATTAQUE SANS DEF
     if (salon.includes("attaques-no-def") || salon.includes("attaque-no-def")) {
-        return 50 * mentionsCount;
+        return 50;
     }
 
     const type = salon.includes("attaque") ? "attaque" : "defense";
@@ -156,7 +158,7 @@ function calculPoints(salon, mentionsCount) {
     if (!match) return 0;
 
     const ennemis = parseInt(match[1]);
-    const allies = mentionsCount;
+    const allies = alliesCount;
 
     if (allies > 5) return 0;
 
@@ -172,7 +174,7 @@ const lastScreenTime = new Map();
 const SCREEN_COOLDOWN = 1000;
 
 // =========================
-// MESSAGE CREATE (screens + commandes)
+// MESSAGE CREATE
 // =========================
 client.on(Events.MessageCreate, async (message) => {
 
@@ -324,11 +326,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         validationQueue.add(messageId);
 
-        let points = 0;
-
         try {
             const regex = /<@!?(\d+)>/g;
             const matches = [...screenMessage.content.matchAll(regex)];
+
             if (matches.length === 0) {
                 validationQueue.delete(messageId);
                 return interaction.reply({
@@ -340,8 +341,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const mentionsCount = matches.length;
             const salonName = screenMessage.channel.name;
 
-            points = calculPoints(salonName, mentionsCount);
-            if (!points || points === 0) {
+            // POINTS PAR PING (barème exact)
+            const pointsParPing = calculPoints(salonName, mentionsCount);
+
+            if (!pointsParPing || pointsParPing === 0) {
                 validationQueue.delete(messageId);
                 return interaction.reply({
                     content: "⚠️ Aucun point attribué.",
@@ -349,13 +352,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 });
             }
 
+            // RÉPARTITION PAR JOUEUR : chaque occurrence = pointsParPing
             for (const match of matches) {
                 const allyId = match[1];
                 if (!saison[allyId]) saison[allyId] = 0;
-                saison[allyId] += points;
+                saison[allyId] += pointsParPing;
             }
 
             await writeSaison(saison);
+
+            const totalPoints = pointsParPing * mentionsCount;
+
+            validationQueue.delete(messageId);
+
+            await screenMessage.react("👍").catch(() => {});
+
+            await interaction.message.edit({
+                content: `🟩 Screen validé par <@${interaction.user.id}> — +${totalPoints} points`,
+                components: []
+            });
+
+            return interaction.reply({
+                content: "✔ Validation prise en compte",
+                ephemeral: true
+            });
 
         } catch (err) {
             console.error(err);
@@ -365,20 +385,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 ephemeral: true
             });
         }
-
-        validationQueue.delete(messageId);
-
-        await screenMessage.react("👍").catch(() => {});
-
-        await interaction.message.edit({
-            content: `🟩 Screen validé par <@${interaction.user.id}> — +${points} points`,
-            components: []
-        });
-
-        return interaction.reply({
-            content: "✔ Validation prise en compte",
-            ephemeral: true
-        });
     }
 });
 
