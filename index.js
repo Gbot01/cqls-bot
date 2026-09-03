@@ -333,10 +333,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
         validationQueue.add(messageId);
 
         let points = 0;
+        let totalPoints = 0;
 
         try {
             const regex = /<@!?(\d+)>/g;
             const matches = [...screenMessage.content.matchAll(regex)];
+
             if (matches.length === 0) {
                 validationQueue.delete(messageId);
                 return interaction.reply({
@@ -348,7 +350,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const mentionsCount = matches.length;
             const salonName = screenMessage.channel.name;
 
+            // 🔥 Barème
             points = calculPoints(salonName, mentionsCount);
+
             if (!points || points === 0) {
                 validationQueue.delete(messageId);
                 return interaction.reply({
@@ -357,6 +361,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 });
             }
 
+            // 🔥 Calcul total = barème × nombre de pings
+            totalPoints = points * mentionsCount;
+
+            // 🔥 Distribution : chaque joueur reçoit le barème
             for (const match of matches) {
                 const allyId = match[1];
                 if (!saison[allyId]) saison[allyId] = 0;
@@ -378,8 +386,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         await screenMessage.react("👍").catch(() => {});
 
+        // 🔥 Affichage du total comme AVANT
         await interaction.message.edit({
-            content: `🟩 Screen validé par <@${interaction.user.id}> — +${points} points`,
+            content: `🟩 Screen validé par <@${interaction.user.id}> — +${points} points chacun (total ${totalPoints})`,
             components: []
         });
 
