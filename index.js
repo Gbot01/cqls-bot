@@ -69,7 +69,6 @@ async function readSaison() {
 
     } catch (err) {
         console.log("❌ Impossible de lire saison.json sur GitHub");
-        console.log(err.response?.status, err.response?.statusText);
         return {};
     }
 }
@@ -91,9 +90,7 @@ async function writeSaison(newData) {
         });
 
         sha = current.data.sha;
-    } catch {
-        console.log("⚠️ Création du fichier saison.json");
-    }
+    } catch {}
 
     const updatedContent = Buffer.from(JSON.stringify(newData, null, 2)).toString("base64");
 
@@ -115,12 +112,10 @@ async function writeSaison(newData) {
 let saison = {};
 
 // =========================
-// CHARGEMENT GITHUB AVANT READY
+// CHARGEMENT GITHUB
 // =========================
 (async () => {
-    console.log("⏳ Chargement saison.json depuis GitHub…");
     saison = await readSaison();
-    console.log("✅ Saison chargée :", saison);
 })();
 
 // =========================
@@ -164,12 +159,25 @@ function calculPoints(salon, mentionsCount) {
 }
 
 // =========================
-// MESSAGECREATE
+// ANTI-SPAM SCREENS (JOUEURS)
 // =========================
+const lastScreenTime = new Map();
+const SCREEN_COOLDOWN = 1000;
+
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
 
     if (message.attachments.size > 0) {
+        const now = Date.now();
+        const prev = lastScreenTime.get(message.author.id) || 0;
+
+        if (now - prev < SCREEN_COOLDOWN) {
+            message.reply("⚠️ Tu postes tes screens trop vite, patiente une seconde.").catch(() => {});
+            return;
+        }
+
+        lastScreenTime.set(message.author.id, now);
+
         const salon = message.channel.name.toLowerCase();
 
         if (
@@ -199,12 +207,8 @@ client.on("messageCreate", async (message) => {
         let index = 0;
 
         for (const [id, points] of classement) {
-
             const member = await message.guild.members.fetch(id).catch(() => null);
-
-            const name = member
-                ? (member.nickname || member.user.username)
-                : `ID ${id}`;
+            const name = member ? (member.nickname || member.user.username) : `ID ${id}`;
 
             if (index < 3) {
                 ladder += `**${podium[index]} — ${name}** → ${points} points\n`;
@@ -226,18 +230,37 @@ client.on("messageCreate", async (message) => {
 });
 
 // =========================
-// ANTI DOUBLE VALIDATION + ANTI-SPAM LÉGER + DM
+// FILE D’ATTENTE INTERNE VALIDATIONS
+// =========================
+const validationQueue = [];
+let processingQueue = false;
+
+async function processQueue() {
+    if (processingQueue) return;
+    processingQueue = true;
+
+    while (validationQueue.length > 0) {
+        const job = validationQueue.shift();
+        await job();
+        await new Promise(res => setTimeout(res, 500));
+    }
+
+    processingQueue = false;
+}
+
+// =========================
+// ANTI-SPAM VALIDATIONS + DM + QUEUE
 // =========================
 const validatedMessages = new Set();
 let lastValidationTime = 0;
+const VALIDATION_COOLDOWN = 500;
 
 client.on("messageReactionAdd", async (reaction, user) => {
     if (reaction.emoji.name !== "👍") return;
 
     const now = Date.now();
 
-    // ANTI-SPAM LÉGER + DM
-    if (now - lastValidationTime < 500) {
+    if (now - lastValidationTime < VALIDATION_COOLDOWN) {
         user.send("⚠️ Tu valides trop vite, patiente une seconde.").catch(() => {});
         return;
     }
@@ -252,22 +275,27 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
     validatedMessages.add(originalMessage.id);
 
-    const regex = /<@!?(\d+)>/g;
-    const matches = [...originalContent.matchAll(regex)];
-    if (matches.length === 0) return;
+    validationQueue.push(async () => {
+        const regex = /<@!?(\d+)>/g;
+        const matches = [...originalContent.matchAll(regex)];
+        if (matches.length === 0) return;
 
-    const mentionsCount = matches.length;
-    const salonName = originalMessage.channel.name;
+        const mentionsCount = matches.length;
+        const salonName = originalMessage.channel.name;
 
-    const points = calculPoints(salonName, mentionsCount);
+        const points = calculPoints(salonName, mentionsCount);
+        if (!points || points === 0) return;
 
-    for (const match of matches) {
-        const allyId = match[1];
-        if (!saison[allyId]) saison[allyId] = 0;
-        saison[allyId] += points;
-    }
+        for (const match of matches) {
+            const allyId = match[1];
+            if (!saison[allyId]) saison[allyId] = 0;
+            saison[allyId] += points;
+        }
 
-    await writeSaison(saison);
+        await writeSaison(saison);
+    });
+
+    processQueue();
 });
 
 // =========================
