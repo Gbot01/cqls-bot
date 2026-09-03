@@ -1,4 +1,12 @@
-const { Client, GatewayIntentBits, Partials } = require("discord.js");
+const { 
+    Client, 
+    GatewayIntentBits, 
+    Partials, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    Events 
+} = require("discord.js");
 const axios = require("axios");
 
 // =========================
@@ -16,7 +24,7 @@ const client = new Client({
 });
 
 // =========================
-// BARÈMES ATTAQUE / DÉFENSE / TEMPO
+// BARÈMES ATTAQUE / DÉFENSE / TEMPO (TON CODE EXACT)
 // =========================
 const attaque = {
     1: { 5: 1750, 4: 1000, 3: 400, 2: 150, 1: 115, 0: 50 },
@@ -43,7 +51,7 @@ const tempo = {
 };
 
 // =========================
-// CONFIG GITHUB
+// CONFIG GITHUB (TON CODE EXACT)
 // =========================
 const owner = "Gbot01";
 const repo = "cqls-bot";
@@ -51,7 +59,7 @@ const filePath = "saison.json";
 const token = process.env.GITHUB_TOKEN;
 
 // =========================
-// LECTURE SAISON.JSON
+// LECTURE SAISON.JSON (TON CODE EXACT)
 // =========================
 async function readSaison() {
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
@@ -74,7 +82,7 @@ async function readSaison() {
 }
 
 // =========================
-// ÉCRITURE SAISON.JSON
+// ÉCRITURE SAISON.JSON (TON CODE EXACT)
 // =========================
 async function writeSaison(newData) {
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
@@ -107,19 +115,19 @@ async function writeSaison(newData) {
 }
 
 // =========================
-// VARIABLE SAISON
+// VARIABLE SAISON (TON CODE EXACT)
 // =========================
 let saison = {};
 
 // =========================
-// CHARGEMENT GITHUB
+// CHARGEMENT GITHUB (TON CODE EXACT)
 // =========================
 (async () => {
     saison = await readSaison();
 })();
 
 // =========================
-// READY
+// READY (TON CODE EXACT)
 // =========================
 client.on("ready", () => {
     console.log(`🔥 Bot connecté : ${client.user.tag}`);
@@ -127,7 +135,7 @@ client.on("ready", () => {
 });
 
 // =========================
-// CALCUL POINTS VSX
+// CALCUL POINTS VSX (TON CODE EXACT)
 // =========================
 function calculPoints(salon, mentionsCount) {
     salon = salon.toLowerCase();
@@ -159,21 +167,27 @@ function calculPoints(salon, mentionsCount) {
 }
 
 // =========================
-// ANTI-SPAM SCREENS (JOUEURS)
+// ANTI-SPAM SCREENS JOUEURS (TON CODE EXACT)
 // =========================
 const lastScreenTime = new Map();
 const SCREEN_COOLDOWN = 1000;
 
-client.on("messageCreate", async (message) => {
+// =========================
+// AJOUT DES BOUTONS + ÉPHÉMÈRES (NOUVEAU)
+// =========================
+
+client.on(Events.MessageCreate, async (message) => {
+
     if (message.author.bot) return;
 
+    // Détection screen (ton code)
     if (message.attachments.size > 0) {
+
         const now = Date.now();
         const prev = lastScreenTime.get(message.author.id) || 0;
 
         if (now - prev < SCREEN_COOLDOWN) {
-            message.reply("⚠️ Tu postes tes screens trop vite, patiente une seconde.").catch(() => {});
-            return;
+            return; // pas de DM, pas de message, comme tu veux
         }
 
         lastScreenTime.set(message.author.id, now);
@@ -189,9 +203,30 @@ client.on("messageCreate", async (message) => {
             salon.includes("défenses") ||
             salon.includes("tempo")
         ) {
-            await message.reply("📌 Screen détecté. Vote : 👍 = valider / 👎 = refuser (staff uniquement).");
+
+            // 🔥 AJOUT DES BOUTONS
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`valider_${message.id}`)
+                    .setLabel("🟩 Valider")
+                    .setStyle(ButtonStyle.Success),
+
+                new ButtonBuilder()
+                    .setCustomId(`refuser_${message.id}`)
+                    .setLabel("🟥 Refuser")
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+            await message.reply({
+                content: "📌 Screen détecté — cliquez pour valider ou refuser.",
+                components: [row]
+            });
         }
     }
+
+    // =========================
+    // TON LADDER / COMMANDES EXACTES
+    // =========================
 
     if (message.content === "!ladder") {
         if (Object.keys(saison).length === 0) {
@@ -230,75 +265,114 @@ client.on("messageCreate", async (message) => {
 });
 
 // =========================
-// FILE D’ATTENTE INTERNE VALIDATIONS
+// BOUTONS : VALIDATION / REFUS (NOUVEAU)
 // =========================
-const validationQueue = [];
-let processingQueue = false;
 
-async function processQueue() {
-    if (processingQueue) return;
-    processingQueue = true;
+const lastChefValidation = new Map();
+const validationQueue = new Set();
 
-    while (validationQueue.length > 0) {
-        const job = validationQueue.shift();
-        await job();
-        await new Promise(res => setTimeout(res, 500));
-    }
+client.on(Events.InteractionCreate, async (interaction) => {
 
-    processingQueue = false;
-}
+    if (!interaction.isButton()) return;
 
-// =========================
-// ANTI-SPAM VALIDATIONS + DM + QUEUE
-// =========================
-const validatedMessages = new Set();
-let lastValidationTime = 0;
-const VALIDATION_COOLDOWN = 500;
+    const chefId = interaction.user.id;
+    const [action, messageId] = interaction.customId.split("_");
 
-client.on("messageReactionAdd", async (reaction, user) => {
-    if (reaction.emoji.name !== "👍") return;
-
+    // Anti-spam chef
+    const last = lastChefValidation.get(chefId);
     const now = Date.now();
 
-    if (now - lastValidationTime < VALIDATION_COOLDOWN) {
-        user.send("⚠️ Tu valides trop vite, patiente une seconde.").catch(() => {});
-        return;
+    if (last && now - last < 1500) {
+        return interaction.reply({
+            content: "⚠️ Validation ignorée (trop rapide)",
+            ephemeral: true
+        });
     }
 
-    lastValidationTime = now;
+    lastChefValidation.set(chefId, now);
 
-    const originalMessage = reaction.message;
-    const originalContent = originalMessage.content;
+    // Récupération du screen
+    const channel = interaction.channel;
+    const screenMessage = await channel.messages.fetch(messageId).catch(() => null);
 
-    if (!originalContent || originalContent.trim().length === 0) return;
-    if (validatedMessages.has(originalMessage.id)) return;
+    if (!screenMessage) {
+        return interaction.reply({
+            content: "⚠️ Screen introuvable.",
+            ephemeral: true
+        });
+    }
 
-    validatedMessages.add(originalMessage.id);
+    // REFUSER
+    if (action === "refuser") {
+        return interaction.reply({
+            content: "✖ Screen refusé",
+            ephemeral: true
+        });
+    }
 
-    validationQueue.push(async () => {
-        const regex = /<@!?(\d+)>/g;
-        const matches = [...originalContent.matchAll(regex)];
-        if (matches.length === 0) return;
+    // VALIDER
+    if (action === "valider") {
 
-        const mentionsCount = matches.length;
-        const salonName = originalMessage.channel.name;
-
-        const points = calculPoints(salonName, mentionsCount);
-        if (!points || points === 0) return;
-
-        for (const match of matches) {
-            const allyId = match[1];
-            if (!saison[allyId]) saison[allyId] = 0;
-            saison[allyId] += points;
+        if (validationQueue.has(messageId)) {
+            return interaction.reply({
+                content: "⚠️ Déjà en cours de validation",
+                ephemeral: true
+            });
         }
 
-        await writeSaison(saison);
-    });
+        validationQueue.add(messageId);
 
-    processQueue();
+        try {
+            // 🔥 TON CALCUL EXACT — RIEN CHANGÉ
+            const regex = /<@!?(\d+)>/g;
+            const matches = [...screenMessage.content.matchAll(regex)];
+            if (matches.length === 0) {
+                validationQueue.delete(messageId);
+                return interaction.reply({
+                    content: "⚠️ Aucun ping détecté.",
+                    ephemeral: true
+                });
+            }
+
+            const mentionsCount = matches.length;
+            const salonName = screenMessage.channel.name;
+
+            const points = calculPoints(salonName, mentionsCount);
+            if (!points || points === 0) {
+                validationQueue.delete(messageId);
+                return interaction.reply({
+                    content: "⚠️ Aucun point attribué.",
+                    ephemeral: true
+                });
+            }
+
+            for (const match of matches) {
+                const allyId = match[1];
+                if (!saison[allyId]) saison[allyId] = 0;
+                saison[allyId] += points;
+            }
+
+            await writeSaison(saison);
+
+        } catch (err) {
+            console.error(err);
+            validationQueue.delete(messageId);
+            return interaction.reply({
+                content: "❌ Erreur lors de la validation.",
+                ephemeral: true
+            });
+        }
+
+        validationQueue.delete(messageId);
+
+        return interaction.reply({
+            content: "✔ Validation prise en compte",
+            ephemeral: true
+        });
+    }
 });
 
 // =========================
-// LOGIN
+// LOGIN (TON CODE EXACT)
 // =========================
 client.login(process.env.TOKEN);
