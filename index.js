@@ -8,6 +8,7 @@ const {
     Events 
 } = require("discord.js");
 const axios = require("axios");
+const fs = require("fs");
 
 // =========================
 // CONFIG DISCORD
@@ -50,40 +51,31 @@ const tempo = {
 };
 
 // =========================
-// CONFIG GITHUB
+// SAISON.JSON LOCAL
+// =========================
+function readLocalSaison() {
+    try {
+        return JSON.parse(fs.readFileSync("./saison.json", "utf8"));
+    } catch {
+        return {};
+    }
+}
+
+function writeLocalSaison(data) {
+    fs.writeFileSync("./saison.json", JSON.stringify(data, null, 2));
+}
+
+let saison = readLocalSaison();
+
+// =========================
+// BACKUP GITHUB (MANUEL)
 // =========================
 const owner = "Gbot01";
 const repo = "cqls-bot";
 const filePath = "saison.json";
 const token = process.env.GITHUB_TOKEN;
 
-// =========================
-// LECTURE SAISON.JSON
-// =========================
-async function readSaison() {
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
-
-    try {
-        const res = await axios.get(url, {
-            headers: {
-                Authorization: `Bearer ${token}`,
-                Accept: "application/vnd.github.v3+json"
-            }
-        });
-
-        const content = Buffer.from(res.data.content, "base64").toString("utf8");
-        return JSON.parse(content);
-
-    } catch (err) {
-        console.log("❌ Impossible de lire saison.json sur GitHub");
-        return {};
-    }
-}
-
-// =========================
-// ÉCRITURE SAISON.JSON
-// =========================
-async function writeSaison(newData) {
+async function backupToGitHub() {
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
 
     let sha = null;
@@ -95,14 +87,13 @@ async function writeSaison(newData) {
                 Accept: "application/vnd.github.v3+json"
             }
         });
-
         sha = current.data.sha;
     } catch {}
 
-    const updatedContent = Buffer.from(JSON.stringify(newData, null, 2)).toString("base64");
+    const updatedContent = Buffer.from(JSON.stringify(saison, null, 2)).toString("base64");
 
     await axios.put(url, {
-        message: "Update saison.json",
+        message: "Backup saison.json",
         content: updatedContent,
         sha: sha
     }, {
@@ -114,32 +105,18 @@ async function writeSaison(newData) {
 }
 
 // =========================
-// VARIABLE SAISON
-// =========================
-let saison = {};
-
-// =========================
-// CHARGEMENT GITHUB
-// =========================
-(async () => {
-    saison = await readSaison();
-})();
-
-// =========================
 // READY
 // =========================
 client.on("ready", () => {
     console.log(`🔥 Bot connecté : ${client.user.tag}`);
-    client.guilds.cache.forEach(g => g.members.fetch());
 });
 
 // =========================
-// CALCUL POINTS VSX (POINTS PAR PING, PAS MULTIPLIÉ)
+// CALCUL POINTS VSX
 // =========================
 function calculPoints(salon, alliesCount) {
     salon = salon.toLowerCase();
 
-    // TEMPO → barème déjà par ping
     if (salon.includes("tempo")) {
         if (salon.includes("5-10")) return tempo["5-10"];
         if (salon.includes("10-20")) return tempo["10-20"];
@@ -148,7 +125,6 @@ function calculPoints(salon, alliesCount) {
         return tempo["30+"];
     }
 
-    // ATTAQUE SANS DEF
     if (salon.includes("attaques-no-def") || salon.includes("attaque-no-def")) {
         return 50;
     }
@@ -256,8 +232,14 @@ client.on(Events.MessageCreate, async (message) => {
     // NEWSAISON
     if (message.content.startsWith("!newsaison")) {
         saison = {};
-        await writeSaison(saison);
+        writeLocalSaison(saison);
         return message.reply("🌟 Nouvelle saison lancée !");
+    }
+
+    // BACKUP MANUEL
+    if (message.content === "!backup") {
+        await backupToGitHub();
+        return message.reply("💾 Backup effectué sur GitHub !");
     }
 });
 
@@ -274,7 +256,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const chefId = interaction.user.id;
     const [action, messageId] = interaction.customId.split("_");
 
-    // Anti-spam chef
     const last = lastChefValidation.get(chefId);
     const now = Date.now();
 
@@ -287,7 +268,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     lastChefValidation.set(chefId, now);
 
-    // Récupération du screen
     const channel = interaction.channel;
     const screenMessage = await channel.messages.fetch(messageId).catch(() => null);
 
@@ -341,7 +321,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const mentionsCount = matches.length;
             const salonName = screenMessage.channel.name;
 
-            // POINTS PAR PING (barème exact)
             const pointsParPing = calculPoints(salonName, mentionsCount);
 
             if (!pointsParPing || pointsParPing === 0) {
@@ -352,14 +331,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 });
             }
 
-            // RÉPARTITION PAR JOUEUR : chaque occurrence = pointsParPing
             for (const match of matches) {
                 const allyId = match[1];
                 if (!saison[allyId]) saison[allyId] = 0;
                 saison[allyId] += pointsParPing;
             }
 
-            await writeSaison(saison);
+            writeLocalSaison(saison);
 
             const totalPoints = pointsParPing * mentionsCount;
 
