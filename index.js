@@ -17,14 +17,13 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.GuildMembers
     ],
-    partials: [Partials.Message, Partials.Reaction]
+    partials: [Partials.Message]
 });
 
 // =========================
-// BARÈMES ATTAQUE / DÉFENSE / TEMPO (TON CODE EXACT)
+// BARÈMES ATTAQUE / DÉFENSE / TEMPO
 // =========================
 const attaque = {
     1: { 5: 1750, 4: 1000, 3: 400, 2: 150, 1: 115, 0: 50 },
@@ -51,7 +50,7 @@ const tempo = {
 };
 
 // =========================
-// CONFIG GITHUB (TON CODE EXACT)
+// CONFIG GITHUB
 // =========================
 const owner = "Gbot01";
 const repo = "cqls-bot";
@@ -59,7 +58,7 @@ const filePath = "saison.json";
 const token = process.env.GITHUB_TOKEN;
 
 // =========================
-// LECTURE SAISON.JSON (TON CODE EXACT)
+// LECTURE SAISON.JSON
 // =========================
 async function readSaison() {
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
@@ -82,7 +81,7 @@ async function readSaison() {
 }
 
 // =========================
-// ÉCRITURE SAISON.JSON (TON CODE EXACT)
+// ÉCRITURE SAISON.JSON
 // =========================
 async function writeSaison(newData) {
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
@@ -115,19 +114,19 @@ async function writeSaison(newData) {
 }
 
 // =========================
-// VARIABLE SAISON (TON CODE EXACT)
+// VARIABLE SAISON
 // =========================
 let saison = {};
 
 // =========================
-// CHARGEMENT GITHUB (TON CODE EXACT)
+// CHARGEMENT GITHUB
 // =========================
 (async () => {
     saison = await readSaison();
 })();
 
 // =========================
-// READY (TON CODE EXACT)
+// READY
 // =========================
 client.on("ready", () => {
     console.log(`🔥 Bot connecté : ${client.user.tag}`);
@@ -135,7 +134,7 @@ client.on("ready", () => {
 });
 
 // =========================
-// CALCUL POINTS VSX (TON CODE EXACT)
+// CALCUL POINTS VSX
 // =========================
 function calculPoints(salon, mentionsCount) {
     salon = salon.toLowerCase();
@@ -167,27 +166,26 @@ function calculPoints(salon, mentionsCount) {
 }
 
 // =========================
-// ANTI-SPAM SCREENS JOUEURS (TON CODE EXACT)
+// ANTI-SPAM SCREENS JOUEURS
 // =========================
 const lastScreenTime = new Map();
 const SCREEN_COOLDOWN = 1000;
 
 // =========================
-// AJOUT DES BOUTONS + ÉPHÉMÈRES (NOUVEAU)
+// MESSAGE CREATE (screens + commandes)
 // =========================
-
 client.on(Events.MessageCreate, async (message) => {
 
     if (message.author.bot) return;
 
-    // Détection screen (ton code)
+    // SCREEN
     if (message.attachments.size > 0) {
 
         const now = Date.now();
         const prev = lastScreenTime.get(message.author.id) || 0;
 
         if (now - prev < SCREEN_COOLDOWN) {
-            return; // pas de DM, pas de message, comme tu veux
+            return;
         }
 
         lastScreenTime.set(message.author.id, now);
@@ -204,7 +202,6 @@ client.on(Events.MessageCreate, async (message) => {
             salon.includes("tempo")
         ) {
 
-            // 🔥 AJOUT DES BOUTONS
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId(`valider_${message.id}`)
@@ -224,10 +221,7 @@ client.on(Events.MessageCreate, async (message) => {
         }
     }
 
-    // =========================
-    // TON LADDER / COMMANDES EXACTES
-    // =========================
-
+    // LADDER
     if (message.content === "!ladder") {
         if (Object.keys(saison).length === 0) {
             return message.reply("📉 Aucun point pour le moment.");
@@ -257,6 +251,7 @@ client.on(Events.MessageCreate, async (message) => {
         return message.reply(ladder);
     }
 
+    // NEWSAISON
     if (message.content.startsWith("!newsaison")) {
         saison = {};
         await writeSaison(saison);
@@ -265,9 +260,8 @@ client.on(Events.MessageCreate, async (message) => {
 });
 
 // =========================
-// BOUTONS : VALIDATION / REFUS (NOUVEAU)
+// BOUTONS : VALIDATION / REFUS
 // =========================
-
 const lastChefValidation = new Map();
 const validationQueue = new Set();
 
@@ -304,6 +298,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     // REFUSER
     if (action === "refuser") {
+
+        await screenMessage.react("👎").catch(() => {});
+
+        await interaction.message.edit({
+            content: `🟥 Screen refusé par <@${interaction.user.id}>`,
+            components: []
+        });
+
         return interaction.reply({
             content: "✖ Screen refusé",
             ephemeral: true
@@ -322,8 +324,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         validationQueue.add(messageId);
 
+        let points = 0;
+
         try {
-            // 🔥 TON CALCUL EXACT — RIEN CHANGÉ
             const regex = /<@!?(\d+)>/g;
             const matches = [...screenMessage.content.matchAll(regex)];
             if (matches.length === 0) {
@@ -337,7 +340,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const mentionsCount = matches.length;
             const salonName = screenMessage.channel.name;
 
-            const points = calculPoints(salonName, mentionsCount);
+            points = calculPoints(salonName, mentionsCount);
             if (!points || points === 0) {
                 validationQueue.delete(messageId);
                 return interaction.reply({
@@ -365,6 +368,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         validationQueue.delete(messageId);
 
+        await screenMessage.react("👍").catch(() => {});
+
+        await interaction.message.edit({
+            content: `🟩 Screen validé par <@${interaction.user.id}> — +${points} points`,
+            components: []
+        });
+
         return interaction.reply({
             content: "✔ Validation prise en compte",
             ephemeral: true
@@ -373,6 +383,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 // =========================
-// LOGIN (TON CODE EXACT)
+// LOGIN
 // =========================
 client.login(process.env.TOKEN);
