@@ -8,6 +8,7 @@ const {
     Events 
 } = require("discord.js");
 const axios = require("axios");
+const fs = require("fs");
 
 // =========================
 // CONFIG DISCORD
@@ -50,7 +51,7 @@ const tempo = {
 };
 
 // =========================
-// CONFIG GITHUB
+// CONFIG GITHUB (pour backup uniquement)
 // =========================
 const owner = "Gbot01";
 const repo = "cqls-bot";
@@ -58,32 +59,32 @@ const filePath = "saison.json";
 const token = process.env.GITHUB_TOKEN;
 
 // =========================
-// LECTURE SAISON.JSON
+// SAISON LOCAL (Railway)
 // =========================
-async function readSaison() {
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+let saison = {};
 
+function loadLocalSaison() {
     try {
-        const res = await axios.get(url, {
-            headers: {
-                Authorization: `Bearer ${token}`,
-                Accept: "application/vnd.github.v3+json"
-            }
-        });
-
-        const content = Buffer.from(res.data.content, "base64").toString("utf8");
-        return JSON.parse(content);
-
-    } catch (err) {
-        console.log("❌ Impossible de lire saison.json sur GitHub");
-        return {};
+        if (fs.existsSync("./saison.json")) {
+            saison = JSON.parse(fs.readFileSync("./saison.json", "utf8"));
+        } else {
+            saison = {};
+        }
+    } catch {
+        saison = {};
     }
 }
 
+function saveLocalSaison() {
+    fs.writeFileSync("./saison.json", JSON.stringify(saison, null, 2));
+}
+
+loadLocalSaison();
+
 // =========================
-// ÉCRITURE SAISON.JSON
+// BACKUP MANUEL
 // =========================
-async function writeSaison(newData) {
+async function backupToGitHub() {
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
 
     let sha = null;
@@ -95,14 +96,13 @@ async function writeSaison(newData) {
                 Accept: "application/vnd.github.v3+json"
             }
         });
-
         sha = current.data.sha;
     } catch {}
 
-    const updatedContent = Buffer.from(JSON.stringify(newData, null, 2)).toString("base64");
+    const updatedContent = Buffer.from(JSON.stringify(saison, null, 2)).toString("base64");
 
     await axios.put(url, {
-        message: "Update saison.json",
+        message: "Backup saison.json",
         content: updatedContent,
         sha: sha
     }, {
@@ -112,18 +112,6 @@ async function writeSaison(newData) {
         }
     });
 }
-
-// =========================
-// VARIABLE SAISON
-// =========================
-let saison = {};
-
-// =========================
-// CHARGEMENT GITHUB
-// =========================
-(async () => {
-    saison = await readSaison();
-})();
 
 // =========================
 // READY
@@ -140,15 +128,15 @@ function calculPoints(salon, mentionsCount) {
     salon = salon.toLowerCase();
 
     if (salon.includes("tempo")) {
-        if (salon.includes("5-10")) return tempo["5-10"] * mentionsCount;
-        if (salon.includes("10-20")) return tempo["10-20"] * mentionsCount;
-        if (salon.includes("20-25")) return tempo["20-25"] * mentionsCount;
-        if (salon.includes("25-30")) return tempo["25-30"] * mentionsCount;
-        return tempo["30+"] * mentionsCount;
+        if (salon.includes("5-10")) return tempo["5-10"];
+        if (salon.includes("10-20")) return tempo["10-20"];
+        if (salon.includes("20-25")) return tempo["20-25"];
+        if (salon.includes("25-30")) return tempo["25-30"];
+        return tempo["30+"];
     }
 
     if (salon.includes("attaques-no-def") || salon.includes("attaque-no-def")) {
-        return 50 * mentionsCount;
+        return 50;
     }
 
     const type = salon.includes("attaque") ? "attaque" : "defense";
@@ -254,8 +242,14 @@ client.on(Events.MessageCreate, async (message) => {
     // NEWSAISON
     if (message.content.startsWith("!newsaison")) {
         saison = {};
-        await writeSaison(saison);
+        saveLocalSaison();
         return message.reply("🌟 Nouvelle saison lancée !");
+    }
+
+    // BACKUP MANUEL
+    if (message.content.startsWith("!backup")) {
+        await backupToGitHub();
+        return message.reply("💾 Saison sauvegardée sur GitHub !");
     }
 });
 
@@ -371,7 +365,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 saison[allyId] += points;
             }
 
-            await writeSaison(saison);
+            saveLocalSaison();
 
         } catch (err) {
             console.error(err);
