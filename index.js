@@ -128,14 +128,15 @@ client.on("ready", () => {
 function calculPoints(salon, mentionsCount) {
     salon = salon.toLowerCase();
 
-    if (salon.includes("tempo")) {
-        if (salon.includes("5-10")) return tempo["5-10"];
-        if (salon.includes("10-20")) return tempo["10-20"];
-        if (salon.includes("20-25")) return tempo["20-25"];
-        if (salon.includes("25-30")) return tempo["25-30"];
-        return tempo["30+"];
-    }
-
+if (salon.includes("tempo")) {
+    if (salon.includes("5-10")) return tempo["5-10"];
+    if (salon.includes("10-20")) return tempo["10-20"];
+    if (salon.includes("20-25")) return tempo["20-25"];
+    if (salon.includes("25-30")) return tempo["25-30"];
+    if (salon.includes("plus-de-30")) return tempo["30+"];
+    if (salon.includes("plus-de-50")) return tempo["50+"];
+    return 0;
+}
     if (salon.includes("attaques-no-def") || salon.includes("attaque-no-def")) {
         return 50;
     }
