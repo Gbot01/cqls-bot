@@ -60,24 +60,72 @@ const filePath = "saison.json";
 const token = process.env.GITHUB_TOKEN;
 
 // =========================
-// SAISON LOCAL (Railway)
+// SAISON LOCAL + HISTORIQUE DES VALIDATIONS
 // =========================
+// Tout est enregistré dans saison.json pour que points et annulations
+// soient sauvegardés ensemble. L'ancien format de saison.json est accepté.
+const SAISON_FILE = "./saison.json";
+const SAISON_FORMAT = "cqls-saison-v2";
 let saison = {};
+let validations = {};
+
+function saisonSnapshot() {
+    return {
+        format: SAISON_FORMAT,
+        points: saison,
+        validations: validations
+    };
+}
 
 function loadLocalSaison() {
-    try {
-        if (fs.existsSync("./saison.json")) {
-            saison = JSON.parse(fs.readFileSync("./saison.json", "utf8"));
-        } else {
-            saison = {};
+    if (!fs.existsSync(SAISON_FILE)) return;
+
+    // Ne jamais effacer les points si le JSON existant est illisible.
+    const data = JSON.parse(fs.readFileSync(SAISON_FILE, "utf8"));
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+        throw new Error("Format de saison.json invalide");
+    }
+
+    if (data.format === SAISON_FORMAT) {
+        if (!data.points || !data.validations ||
+            typeof data.points !== "object" ||
+            typeof data.validations !== "object" ||
+            Array.isArray(data.points) || Array.isArray(data.validations)) {
+            throw new Error("Données de saison.json invalides");
         }
-    } catch {
-        saison = {};
+        saison = data.points;
+        validations = data.validations;
+    } else {
+        // Ancien format : { "idJoueur": totalPoints, ... }
+        if (!Object.entries(data).every(([id, points]) => /^\d+$/.test(id) &&
+            typeof points === "number" && Number.isFinite(points))) {
+            throw new Error("Ancien format de saison.json non reconnu");
+        }
+        saison = data;
+        validations = {};
     }
 }
 
 function saveLocalSaison() {
-    fs.writeFileSync("./saison.json", JSON.stringify(saison, null, 2));
+    // Écriture atomique : pas de fichier JSON partiellement écrit.
+    const tmp = `${SAISON_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(saisonSnapshot(), null, 2), "utf8");
+    fs.renameSync(tmp, SAISON_FILE);
+}
+
+// Applique une modification des points ET du journal en une seule sauvegarde.
+// Si l'écriture échoue, on remet l'état en mémoire comme avant.
+function modifierSaison(modification) {
+    const ancienneSaison = { ...saison };
+    const anciennesValidations = { ...validations };
+    try {
+        modification();
+        saveLocalSaison();
+    } catch (error) {
+        saison = ancienneSaison;
+        validations = anciennesValidations;
+        throw error;
+    }
 }
 
 loadLocalSaison();
@@ -100,7 +148,7 @@ async function backupToGitHub() {
         sha = current.data.sha;
     } catch {}
 
-    const updatedContent = Buffer.from(JSON.stringify(saison, null, 2)).toString("base64");
+    const updatedContent = Buffer.from(JSON.stringify(saisonSnapshot(), null, 2)).toString("base64");
 
     await axios.put(url, {
         message: "Backup saison.json",
@@ -243,8 +291,10 @@ client.on(Events.MessageCreate, async (message) => {
 
     // NEWSAISON
     if (message.content.startsWith("!newsaison")) {
-        saison = {};
-        saveLocalSaison();
+        modifierSaison(() => {
+            saison = {};
+            validations = {}; // Les boutons d'annulation de l'ancienne saison deviennent inactifs.
+        });
         return message.reply("🌟 Nouvelle saison lancée !");
     }
 
@@ -256,142 +306,191 @@ client.on(Events.MessageCreate, async (message) => {
 });
 
 // =========================
-// BOUTONS : VALIDATION / REFUS
+// BOUTONS : VALIDATION / REFUS / ANNULATION
 // =========================
 const lastChefValidation = new Map();
 const validationQueue = new Set();
 
+function boutonAnnulation(messageId) {
+    return [new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`annuler_${messageId}`)
+            .setLabel("↩️ Annuler la validation")
+            .setStyle(ButtonStyle.Danger)
+    )];
+}
+
+function affichageValidation(messageId, record) {
+    const total = record.pointsParJoueur * record.joueurs.length;
+    if (record.statut === "validee") {
+        return {
+            content: `🟩 Screen validé par <@${record.chefId}> — +${record.pointsParJoueur} points chacun (total ${total})`,
+            components: boutonAnnulation(messageId)
+        };
+    }
+    if (record.statut === "annulee") {
+        return {
+            content: `↩️ Validation annulée par <@${record.annulePar}> — ${record.pointsParJoueur} points retirés par mention (total retiré ${total})`,
+            components: []
+        };
+    }
+    return {
+        content: `🟥 Screen refusé par <@${record.chefId}>`,
+        components: []
+    };
+}
+
 client.on(Events.InteractionCreate, async (interaction) => {
-
     if (!interaction.isButton()) return;
+    const parsed = /^(valider|refuser|annuler)_(\d+)$/.exec(interaction.customId);
+    if (!parsed) return;
 
-    // 🔥 Vérification du rôle Chef par NOM
+    // Seuls les membres ayant le rôle « chef » peuvent agir.
     if (!interaction.member.roles.cache.some(r => r.name.toLowerCase() === "chef")) {
         return interaction.reply({
-            content: "⛔ Tu n’as pas la permission de valider ce screen.",
+            content: "⛔ Seul un chef peut valider, refuser ou annuler un screen.",
             ephemeral: true
         });
     }
 
+    const [, action, messageId] = parsed;
     const chefId = interaction.user.id;
-    const [action, messageId] = interaction.customId.split("_");
-
-    // Anti-spam chef
     const last = lastChefValidation.get(chefId);
     const now = Date.now();
-
     if (last && now - last < 1500) {
         return interaction.reply({
-            content: "⚠️ Validation ignorée (trop rapide)",
+            content: "⚠️ Action ignorée (trop rapide).",
             ephemeral: true
         });
     }
-
     lastChefValidation.set(chefId, now);
 
-    // Récupération du screen
-    const channel = interaction.channel;
-    const screenMessage = await channel.messages.fetch(messageId).catch(() => null);
-
-    if (!screenMessage) {
-        return interaction.reply({
-            content: "⚠️ Screen introuvable.",
-            ephemeral: true
-        });
+    // Accuse réception avant toute récupération de message Discord.
+    await interaction.deferReply({ ephemeral: true });
+    if (validationQueue.has(messageId)) {
+        return interaction.editReply("⚠️ Une action est déjà en cours sur ce screen.");
     }
+    validationQueue.add(messageId);
 
-    // REFUSER
-    if (action === "refuser") {
+    try {
+        const dejaTraitee = validations[messageId];
 
-        await screenMessage.react("👎").catch(() => {});
+        // ANNULER : utilise les points et joueurs sauvegardés lors de la validation.
+        // Ne recalcule jamais le barème actuel, même si les barèmes ont changé.
+        if (action === "annuler") {
+            if (!dejaTraitee) {
+                return interaction.editReply("⚠️ Validation introuvable dans la saison actuelle (ancienne validation ou ancienne saison).");
+            }
+            if (dejaTraitee.statut === "annulee") {
+                await interaction.message.edit(affichageValidation(messageId, dejaTraitee))
+                    .catch(err => console.error("Impossible de mettre à jour le bouton :", err));
+                return interaction.editReply("ℹ️ Cette validation a déjà été annulée. Aucun point retiré.");
+            }
+            if (dejaTraitee.statut !== "validee") {
+                return interaction.editReply("⚠️ Ce screen n'a pas été validé : rien à annuler.");
+            }
 
-        await interaction.message.edit({
-            content: `🟥 Screen refusé par <@${interaction.user.id}>`,
-            components: []
-        });
+            // Vérifier que la saison contient encore suffisamment de points :
+            // par exemple si les données ont été restaurées depuis un ancien backup.
+            const aRetirer = new Map();
+            for (const id of dejaTraitee.joueurs) {
+                aRetirer.set(id, (aRetirer.get(id) || 0) + dejaTraitee.pointsParJoueur);
+            }
+            for (const [id, montant] of aRetirer) {
+                if ((saison[id] || 0) < montant) {
+                    return interaction.editReply(
+                        "⚠️ Annulation bloquée : les points actuels d'un joueur ne correspondent plus à l'historique. Aucun point retiré."
+                    );
+                }
+            }
 
-        return interaction.reply({
-            content: "✖ Screen refusé",
-            ephemeral: true
-        });
-    }
-
-    // VALIDER
-    if (action === "valider") {
-
-        if (validationQueue.has(messageId)) {
-            return interaction.reply({
-                content: "⚠️ Déjà en cours de validation",
-                ephemeral: true
+            modifierSaison(() => {
+                for (const [id, montant] of aRetirer) {
+                    saison[id] -= montant;
+                    if (saison[id] === 0) delete saison[id];
+                }
+                validations[messageId] = {
+                    ...dejaTraitee,
+                    statut: "annulee",
+                    annulePar: chefId
+                };
             });
+
+            const miseAJour = await interaction.message.edit(
+                affichageValidation(messageId, validations[messageId])
+            ).then(() => true).catch(err => {
+                console.error("Annulation enregistrée, mais affichage Discord non modifié :", err);
+                return false;
+            });
+            return interaction.editReply(miseAJour
+                ? "↩️ Validation annulée. Les points ont été retirés du classement."
+                : "↩️ Points retirés et sauvegardés, mais impossible de mettre à jour le message Discord.");
         }
 
-        validationQueue.add(messageId);
-
-        let points = 0;
-        let totalPoints = 0;
-
-        try {
-            const regex = /<@!?(\d+)>/g;
-            const matches = [...screenMessage.content.matchAll(regex)];
-
-            if (matches.length === 0) {
-                validationQueue.delete(messageId);
-                return interaction.reply({
-                    content: "⚠️ Aucun ping détecté.",
-                    ephemeral: true
-                });
-            }
-
-            const mentionsCount = matches.length;
-            const salonName = screenMessage.channel.name;
-
-            // 🔥 Barème
-            points = calculPoints(salonName, mentionsCount);
-
-            if (!points || points === 0) {
-                validationQueue.delete(messageId);
-                return interaction.reply({
-                    content: "⚠️ Aucun point attribué.",
-                    ephemeral: true
-                });
-            }
-
-            // 🔥 Calcul total = barème × nombre de pings
-            totalPoints = points * mentionsCount;
-
-            // 🔥 Distribution : chaque joueur reçoit le barème
-            for (const match of matches) {
-                const allyId = match[1];
-                if (!saison[allyId]) saison[allyId] = 0;
-                saison[allyId] += points;
-            }
-
-            saveLocalSaison();
-
-        } catch (err) {
-            console.error(err);
-            validationQueue.delete(messageId);
-            return interaction.reply({
-                content: "❌ Erreur lors de la validation.",
-                ephemeral: true
-            });
+        // VALIDER / REFUSER : bloquer toute double attribution (même après un redémarrage).
+        if (dejaTraitee) {
+            await interaction.message.edit(affichageValidation(messageId, dejaTraitee))
+                .catch(err => console.error("Impossible de réparer l'affichage :", err));
+            return interaction.editReply("ℹ️ Ce screen a déjà été traité. Aucun point ajouté.");
         }
 
+        const screenMessage = await interaction.channel.messages.fetch(messageId).catch(() => null);
+        if (!screenMessage) {
+            return interaction.editReply("⚠️ Screen introuvable.");
+        }
+
+        if (action === "refuser") {
+            modifierSaison(() => {
+                validations[messageId] = {
+                    statut: "refusee", chefId, pointsParJoueur: 0, joueurs: []
+                };
+            });
+            await screenMessage.react("👎").catch(() => {});
+            await interaction.message.edit(affichageValidation(messageId, validations[messageId]))
+                .catch(err => console.error("Refus enregistré, mais affichage non modifié :", err));
+            return interaction.editReply("✖ Screen refusé.");
+        }
+
+        if (action === "valider") {
+            const joueurs = [...screenMessage.content.matchAll(/<@!?(\d+)>/g)]
+                .map(match => match[1]);
+            if (joueurs.length === 0) {
+                return interaction.editReply("⚠️ Aucun ping détecté.");
+            }
+
+            const points = calculPoints(screenMessage.channel.name, joueurs.length);
+            if (!Number.isFinite(points) || points <= 0) {
+                return interaction.editReply("⚠️ Aucun point attribué.");
+            }
+
+            modifierSaison(() => {
+                for (const id of joueurs) {
+                    saison[id] = (saison[id] || 0) + points;
+                }
+                validations[messageId] = {
+                    statut: "validee",
+                    chefId,
+                    pointsParJoueur: points,
+                    joueurs
+                };
+            });
+
+            await screenMessage.react("👍").catch(() => {});
+            const miseAJour = await interaction.message.edit(
+                affichageValidation(messageId, validations[messageId])
+            ).then(() => true).catch(err => {
+                console.error("Validation enregistrée, mais affichage non modifié :", err);
+                return false;
+            });
+            return interaction.editReply(miseAJour
+                ? "✔ Validation prise en compte. Le bouton d'annulation est disponible."
+                : "✔ Points enregistrés, mais impossible d'afficher le bouton d'annulation. Réessayez le bouton Valider pour actualiser le message sans doubler les points.");
+        }
+    } catch (error) {
+        console.error("Erreur traitement screen :", error);
+        return interaction.editReply("❌ Erreur lors de l'action. Vérifie les logs Railway et la sauvegarde saison.json.");
+    } finally {
         validationQueue.delete(messageId);
-
-        await screenMessage.react("👍").catch(() => {});
-
-        // 🔥 Affichage du total comme AVANT
-        await interaction.message.edit({
-            content: `🟩 Screen validé par <@${interaction.user.id}> — +${points} points chacun (total ${totalPoints})`,
-            components: []
-        });
-
-        return interaction.reply({
-            content: "✔ Validation prise en compte",
-            ephemeral: true
-        });
     }
 });
 
